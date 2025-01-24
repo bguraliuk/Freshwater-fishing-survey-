@@ -29,6 +29,19 @@ server <- function(input, output, session) {
   # Section titles
   sections <- c("General Questions", "MyCatch", "Activities", "Motivations","Economics", "Freshwater Packages", "Demographics", "Comments")
   
+  # Skip to Question 13 logic based on q2 input
+  observeEvent(input$q2, {
+    if (input$q2 == 0) {  # If the user selects "No" for Question 2
+      currentSection(which(sections == "Motivations"))  # Skip to the section with Question 13
+    }
+  })
+  #skip to q8 for q3
+  observeEvent(input$q3, {
+    if (input$q3 == 0) {  # If the user selects "No" for Question 3
+      currentSection(which(sections == "Activities"))  # Skip to the section with Question 8
+    }
+  })
+  
   # Define the survey questions for each section
   output$questionsUI <- renderUI({
     switch(sections[currentSection()],
@@ -46,7 +59,7 @@ server <- function(input, output, session) {
            "MyCatch" = tagList(
              h3("MyCatch"),
              radioButtons("q3", "3. Do you actively use the MyCatch app or other fishing apps to record your fishing activities?",
-                          choices = c("Yes" = 3, "MyCatch and other apps" = 2, "Only other apps (specify)" = 1, "No" = 0)),
+                          choices = c("Only MyCatch" = 3, "MyCatch and other apps" = 2, "Only other apps (specify)" = 1, "No" = 0)),
              conditionalPanel(
                condition = "input.q3 == 1",
                textInput("q3_specify", "Please specify the other apps:")
@@ -76,7 +89,7 @@ server <- function(input, output, session) {
              
              br(),
              
-             numericInput("q9", "9. How many hours per day were spent fishing on BC freshwater trips?", value = 0, min = 0),
+             numericInput("q9", "9. On average, how many hours per day did you fish in freshwater in British Columbia on the days you fished between April 2024 and March 2025? ", value = 0, min = 0),
              
              checkboxGroupInput(
                "q10",
@@ -136,17 +149,15 @@ server <- function(input, output, session) {
              # Question 15
              conditionalPanel(
                condition = "input.q14 == 1",
-               h4("15. For each investment category, please indicate the amount of money spent in British Columbia between April 2024 and March 2025 by you and members of your household, and estimate the percentage of the total amount attributed to freshwater fishing:"),
-               lapply(seq_along(Economics), function(i) {
-                 tagList(
-                   h5(Economics[i]),
-                   numericInput(paste0("amount_", i), "Amount spent ($):", value = 0, min = 0, step = 0.01),
-                   numericInput(paste0("percentage_", i), "Percentage attributed to freshwater fishing (%):", value = 0, min = 0, max = 100, step = 1)
-                 )
-               }),
-               actionButton("submitQ15", "Submit Question 15")
+               h4("15. For each investment category, please enter the amount spent in British Columbia and the percentage attributed to fishing in freshwater:"),
+               
+               tableOutput("economicsTable"),  # Dynamically rendered table
+               actionButton("submitQ15", "Submit Question 15"),
+               textOutput("confirmationQ15")
              ),
+             
            ),
+           
            # Freshwater Packages Section
            "Freshwater Packages" = tagList(
              h3("Freshwater Packages"),
@@ -223,10 +234,10 @@ server <- function(input, output, session) {
         as.character(textInput(paste0("areasFished_", i), label = NULL, placeholder = "Enter zones (e.g., 1-9)"))
       }),
       `Fished on Rivers` = sapply(1:12, function(i) {
-        as.character(selectInput(paste0("fishedRivers_", i), label = NULL, choices = c("Yes", "No"), selected = NULL))
+        as.character(selectInput(paste0("fishedRivers_", i), label = NULL, choices = c("N/A", "Yes", "No"), selected = NULL))
       }),
       `Fished on Lakes` = sapply(1:12, function(i) {
-        as.character(selectInput(paste0("fishedLakes_", i), label = NULL, choices = c("Yes", "No"), selected = NULL))
+        as.character(selectInput(paste0("fishedLakes_", i), label = NULL, choices = c("N/A", "Yes", "No"), selected = NULL))
       }),
       stringsAsFactors = FALSE,
       check.names = FALSE
@@ -309,24 +320,45 @@ server <- function(input, output, session) {
       )
     })
     
-    # Handle submission for Question 15
-    observeEvent(input$submitQ15, {
-      responses <- lapply(seq_along(Economics), function(i) {
-        list(
-          category = Economics[i],
-          amount = input[[paste0("amount_", i)]],
-          percentage = input[[paste0("percentage_", i)]]
-        )
-      })
-      print(responses)
-      showNotification("Thank you for submitting your Economics data!")
-    })
+    
     
     # Print responses in the console
     print(responses)
     
     # Confirmation message
     output$confirmationQ13 <- renderText("Thank you for submitting your responses!")
+  })
+  
+  # Render the Economics  question 15
+  output$economicsTable <- renderTable({
+    data.frame(
+      `Investment Category` = Economics,  # Categories of investment
+      `Amount Spent in BC ($)` = sapply(seq_along(Economics), function(i) {
+        as.character(numericInput(paste0("amount_", i), label = NULL, value = 0, min = 0, step = 0.01))
+      }),
+      `% Attributed to Freshwater Fishing` = sapply(seq_along(Economics), function(i) {
+        as.character(numericInput(paste0("percentage_", i), label = NULL, value = 0, min = 0, max = 100, step = 1))
+      }),
+      stringsAsFactors = FALSE,
+      check.names = FALSE
+    )
+  }, sanitize.text.function = function(x) x)
+  
+  # Handle submission for Question 15
+  observeEvent(input$submitQ15, {
+    responses <- lapply(seq_along(Economics), function(i) {
+      list(
+        category = Economics[i],
+        amount = input[[paste0("amount_", i)]],
+        percentage = input[[paste0("percentage_", i)]]
+      )
+    })
+    
+    # Log responses (for debugging or saving)
+    print(responses)
+    
+    # Confirmation message
+    output$confirmationQ15 <- renderText("Thank you for submitting your investment data!")
   })
   
   # Updated Server Code for Question 17
@@ -435,10 +467,5 @@ server <- function(input, output, session) {
 shinyApp(ui = ui, server = server)
 
 
-## R app ##
-rsconnect::setAccountInfo(name='bguraliuk',
-                          token='3EAE3198A7AB91FEB83E77D4678EEC68',
-                          secret='jDecEpZyFFL4rmNQiwaVSIWfQ9HmWGEo0YeNhv9t')
-library(rsconnect)
-rsconnect::deployApp('3EAE3198A7AB91FEB83E77D4678EEC68')
+
 
